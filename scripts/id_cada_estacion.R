@@ -29,8 +29,8 @@ for (i in 1:length(arch_list)) {
         df_est <- rbind(df_est, df)
 }
 
-write.csv(df_est, "C:/Users/HP/Desktop/EST/Rest.csv")
-
+#write.csv(df_est, "C:/Users/HP/Desktop/EST/Rest.csv")
+# no correr, modificar ruta de salidas para evitar sobreescritura
 
 # en excel corrijo los caracteres " y '  
 # ademas, reemplazo los espacios con _ y
