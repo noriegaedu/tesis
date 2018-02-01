@@ -1,7 +1,7 @@
 # ANEXO 1
 
-0. id_cada_estacion.R
-1. ordenar_datos.R
-2. comparacion_con_captor_enrique.R -> fn: dftolerancias
-3. ejem_est_para_trabajar.R
-4. reemp_totalizadores_chuspipata.R
+0.   id_cada_estacion.R
+1.   ordenar_datos.R
+2.   comparacion_con_captor_enrique.R -> fn: dftolerancias
+3.1  ejem_est_para_trabajar.R -> fn: tolmeses
+4.2  reemp_totalizadores_chuspipata.R
