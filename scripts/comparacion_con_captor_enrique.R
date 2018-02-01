@@ -146,7 +146,8 @@ agr_wide_tol = reshape(agr_melt,
                        direction = 'wide' ) %>% 
         data.table::setnames(names(agr_tol))
 
-write.csv(agr_wide_tol, "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv", row.names = F)
+# write.csv(agr_wide_tol, "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv", row.names = F)
+# no escribir para evitar reemplazar el archivos original usado en proceso
 
 ###########################################################
 
