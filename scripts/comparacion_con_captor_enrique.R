@@ -149,6 +149,7 @@ agr_wide_tol = reshape(agr_melt,
 # write.csv(agr_wide_tol, "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv", row.names = F)
 # no escribir para evitar reemplazar el archivos original usado en proceso
 
+
 ###########################################################
 
 # a partir de aqui solo es para verificar que no hay diferencias
