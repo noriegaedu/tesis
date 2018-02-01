@@ -53,7 +53,8 @@ for (k in 1:length(nom_est)) { # numero de estaciones 239
 names(t) <- c("fecha", nom_est)
 #write.csv(t, paste0(RUTA,"/todo en uno/todoenuno.csv"), row.names = F)
 
-write.csv(t, "H:/@Documentos/Tesis/Proy_R/resultados/todoenuno.csv", row.names = F)
+# write.csv(t, "H:/@Documentos/Tesis/Proy_R/resultados/todoenuno.csv", row.names = F)
+# no correr, evitar sobrrescritura cambiando rutas de salida
 
 #' ojo existe duplicado en 'C:/Users/HP/Desktop/EST/desde 1981/todo en uno/todoenuno.csv', al parecer son 
 #' lo mismo, verificar
