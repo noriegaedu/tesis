@@ -1,0 +1,95 @@
+---
+title: "Anexo 2"
+subtitle: "Tratamiento previo de la informacion EPS"
+output: 
+  pdf_document: 
+    highlight: tango
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+   
+## TRMM-3B42
+Para TRMM-3B42 se usaron operadores *nco* segun lo descrito en la seccion yyyyy, estos operadores son ejecutados desde la consola `cmd` de Windows o desde el bash de Linux y siguen la siguiente estructura para operar:
+
+```{nco_estructura, eval=F}
+operador opciones entrada.nc salida.nc
+```
+Para concatenar lso archivos cada 3-horas descargados para el area de estudio se emplea el operador *ncrat* como se muestra a continuacion:
+```{ncrat_ej, eval=F}
+ncrcat 3B42.19980102.12.7.SUB.nc 3B42.19980101.15.7.SUB.nc 3B42.19980101.18.7.SUB.nc 
+3B42.19980101.21.7.SUB.nc 3B42.19980102.00.7.SUB.nc 3B42.19980102.03.7.SUB.nc 
+3B42.19980102.06.7.SUB.nc 3B42.19980102.09.7.SUB.nc d.19980101.nc
+```
+
+No se usa ninguna opcion del operador y se concatenan los archivos NetCDF que estan a continuacion del operador. El ultimo argumento del operador (en este caso `d.19980101.nc`) indica el nombre en el que se guardara la salida del operador. En este ejemplo se observa el procedimiento para el dia 1998/01/01 para el area de estudio (-4Z, hora boliviana).
+
+El resultado de *ncrat* debe ser agragado (sumado) para obtener el valor de precipitacion del dia 1998/01/01, para esto se usa el operador *ncra*:
+
+```{ncra, eval=F}
+ncra -h -O -y ttl d.19980101.nc s.19980101.nc
+```
+Donde *-h* indica que la operacion no se adicione al historial del archivo de salida, *-O* indica que se sobrescriba si existe un archivo con el mismo nombre, *-y* junto a *ttl* indican que se realize una suma de los valores de cada celda. En el ejemplo se suman los archivos concatendaos en *d.19980101.nc* con salida en el archivo *s.19980101.nc*.
+
+Tal como se describio en la seccion qwer, el valor de la variable descargada (precipitación) a nivel de 3-horas es un promedio dentro de ese periodo de tiempo, por lo que la multiplicación por 3 es necesaria para obtener un valor de precipitación de 3-horas real, para tal procedimiento se emplea el operador *ncap2* segun:
+```{ncap2, eval=F}
+ncap2 -s "pcp=pcp*3" s.19980101.nc sR.19980101.nc
+```
+Se multiplica por 3 la variable *pcp* del archivo de entrada *s.19980101.nc* y el resutlado se guarda en el archivo *sR.19980101.nc*. La opcion *-s* indica que se obtenga una salida simple.
+
+Finalemnte, para obtener archivso NetCDF a nivel mensual se usa nuevamente el operador *ncra* para sumar todos los dias de un mes:
+```{ncra, eval=F}
+ncra -h -O -y ttl sR.19980101.nc sR.19980102.nc sR.19980103.nc sR.19980104.nc 
+sR.19980105.nc sR.19980106.nc sR.19980107.nc sR.19980108.nc sR.19980109.nc sR.19980110.nc 
+sR.19980111.nc sR.19980112.nc sR.19980113.nc sR.19980114.nc sR.19980115.nc sR.19980116.nc 
+sR.19980117.nc sR.19980118.nc sR.19980119.nc sR.19980120.nc sR.19980121.nc sR.19980122.nc 
+sR.19980123.nc sR.19980124.nc sR.19980125.nc sR.19980126.nc sR.19980127.nc sR.19980128.nc 
+sR.19980129.nc sR.19980130.nc sR.19980131.nc cmsR.199801.nc 
+```
+La salida *cmsR.199801.nc* y demas archivos similares (para otros meses y otros anhos del periodo) son usados en el analsis del modelo SDK.
+
+## CHIRPS
+
+Los archivos de CHIRPS fueron descargados a nivel diario pero fue necesario cortar cada archivo segun el area de estudio. Para tal proposito se empleo el siguiente codigo en R:
+```{chirps_cut, eval=F}
+library(raster)
+
+# se leen las rutas completas de cada archivo chirps a nivel mundial
+chirps <- list.files("H:/CHIRPS2.0/chirps diario/para cortar",pattern = ".tif", 
+                     full.names = T)
+
+# se leen solo los nombres de cada archivo chirps 
+chirps2 <- list.files("H:/CHIRPS2.0/chirps diario/para cortar", pattern = ".tif")
+
+# se leen los archivos como objetos raster
+chirps_list <- lapply(chirps, raster) 
+
+# se cortan segun paralelos pasados a la funcion `crop`
+chirps_list_cut <- lapply(chirps_list, crop, extent(-70.25, -64.75, -18.25, -12.75))
+
+# y se escriben los archivos cortados:
+for (i in 1:length(chirps_list_cut)) {
+        name <- paste("H:/CHIRPS2.0/chirps diario/para cortar/ya cortados/c_", 
+                      chirps2[i], sep="")
+        writeRaster(chirps_list_cut[[i]], name, overwrite=T)
+}
+```
+Finalmente se agragan los archivos cortados a nivel mensual:
+```{sum_chirps, eval=F}
+for (i in 1:19) { #nro de anhos en el periodo 1998-2016
+        for (j in 1:12) { # meses
+                if(j < 10) { pat <- paste0(as.character(i+1997), ".0", as.character(j)) }
+                if(j >= 10) { pat <- paste0(as.character(i+1997), ".", as.character(j)) }
+                files <- list.files("H:/@Documentos/Tesis/ProyR_T_CH/data/CHIRPS", 
+                                    pattern = pat, full.names = T)
+                raster_files <- lapply(files, raster)
+                tmp <- Reduce("+", raster_files)
+                writeRaster(tmp, paste0("H:/@Documentos/Tesis/ProyR_T_CH/data/CHIRPS", 
+                                        "/mes/c_chirps-v2.0.", pat, ".tif"))
+        }
+}
+
+```
+Las salidas de este bucle (por ejemplo *c_chirps-v2.0.1998.01.tif*) se usaron para el analisis con el modelo SDK.
+
