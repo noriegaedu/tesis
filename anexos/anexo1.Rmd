@@ -1,6 +1,6 @@
 ---
 title: "Anexo 1"
-subtitle: 'Tratamiento previo de la informacion de las estaciones terrestres
+subtitle: 'Tratamiento previo de la informacion de las estaciones terrestres'
 output: pdf_document
 ---
 
@@ -396,7 +396,7 @@ dim(read.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wi
 ```
 que corresponden a 228 meses y 239 estaciones.
 
-Se aplica la tolerancia de 10 datos como minimo para cada mes dentro de la serie excluyendo del analisis a Chuspipata y Huaylipaya para asegurarse su uso en el analisis final.
+Se aplica la tolerancia de 10 datos como minimo para cada mes dentro de la serie excluyendo del analisis a Chuspipata y Huaylipaya para asegurarse su uso en el analisis final. Tambien se indica la creacion de un archivo de texto (*.txt) con las coordenadas de las estaciones de `est_mes.csv` (con el argumento `coordest = T`) en el archivo `H:/@Documentos/Tesis/ProyR_T_CH/data/coord_est_acep_mes.txt`.
 ```{r, eval=F}
 source('H:/@Documentos/Tesis/ProyR_T_CH/Rainmerging_edu/scripts/func_tolmeses.R')
 tolmeses(agr_wide_tol, 10, c('Chuspipata', 'Huaylipaya'), coordest = T) %>%
