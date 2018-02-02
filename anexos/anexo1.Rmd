@@ -1,0 +1,429 @@
+---
+title: "Anexo 1"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+Se obtuvo información de 357 estaciones las cuales fueron revisadas manualmente (revisando número de años de información y ubicación geográfica) obteniendo un total de 239 estaciones potenciales de trabajo para luego obtener, aplicando tolerancias de días faltantes y número mínimo de datos por mes, 107 estaciones de trabajo como resultado final.
+
+Con el script `ordenar_datos.R ` se crea el data frame `todoenuno.csv` (con dimensiones 13149x240, 13149 días y 239 estaciones) en la que se encuentra la información de todas las estaciones potenciales (239) a nivel diario del periodo (1981-2016). Para tener un periodo de estudio común entre ambas TRMM-3B42 y CHIRPS se redujo la extensión del periodo inicial al periodo 1998-2016 agregando la salida a nivel mensual usando la función `dftol ` (que usa las tolerancias de días faltantes para épocas húmeda y seca) para obtener el data frame `agr_wide_tol.csv`.
+
+Como se mencionó en la sección xxxxx se usó información externa para completar algunas estaciones de trabajo. Se usaron el captor a nivel mensual producido por Coritza xxx para compararlo con `agr_wide_tol.csv` y reemplazar información de meses en los que exista una diferencia mayor a 0.5mm/mes en estaciones donde sea posible la comparación. Este proceso fue realizado por el script `comparación_con_captor_enrique.R`. Luego, se usó la función `tolmeses` para aplicar la tolerancia de número de datos mínimo (10) por cada mes dentro del periodo de estudio obteniendo el data frame `est_mes.csv`. Finalmente, se reemplazaron los valores de la estación Chuspipata obtenida por los totalizadores administrados por el IHH usando el script `reemp_totalizadores_chuspipata.R`, con esta operación se sobrescribe el data frame `est_mes.csv` que es la base del análisis a nivel mensual de este trabajo. 
+   
+
+\pagebreak
+
+## Funciones
+
+### func_dftol.R
+
+```{r, eval=F}
+#' @author Eduardo Noriega
+#' @description crear df con valores agregados mensuales aplicando tolerancias de dias
+#' faltantes para epoca seca y humeda.
+#' @param file es un string con la direccion del archivo todoenuno.csv
+#' Ej: 'C:/Users/HP/Desktop/EST/desde 1981/todo en uno/todoenuno.csv'
+#' El archivo todoenuno.csv tiene que tener en el siguiente formato:
+#' 
+#' | fecha      |  A  |  B  | ... | ... |
+#' | 1998-01-01 | ... | ... | ... | ... |
+#' | 1998-01-02 | ... | ... | ... | ... |
+#' |     ...    | ... | ... | ... | ... |
+#' |     ...    | ... | ... | ... | ... |
+#' | 2016-12-31 | ... | ... | ... | ... |
+#' 
+#' Donde A, B, etc son las estaciones. 
+#' La columna fecha estara en formato Date. Las fechas del ejemplo son nominales, puede
+#' tener cualquier inicio y fin pero el paso temporal es diario.
+
+#' @param sec es un vector con los meses secos. Ej: 5:8
+#' @param hum es un vector con los meses humedos. Ej. c(1:3,11:12)
+#' @param tolsec es un entero que indica el numero de dias faltantes 
+#' que se acepta para epoca seca.
+#' @param tolhum es un entero que indica el numero de dias faltantes 
+#' que se acepta para epoca humeda.
+#' 
+#' @return data frame con valores agregados mensuales con las tolerancias
+#' estcionales aplicadas.
+
+dftol <- function(file, sec, hum, tolsec, tolhum, toltr){
+        require(dplyr)
+        require(lubridate)
+        seco   = sec ; tolseco = tolsec
+        humedo = hum ; tolhum  = tolhum
+        trans  = setdiff(1:12, union(seco, humedo)) ; toltrans = toltr
+        
+        todoenuno <- read.csv(file, 
+                             stringsAsFactors = F) %>%
+                mutate(fecha = as.Date(fecha)) %>% 
+                filter(fecha >= as.Date('1998-01-01')) %>%
+                mutate(mes = month(fecha), ano = year(fecha)) %>%
+                dplyr::select(241:242,2:240) # puede variar segun numero de estaciones
+        
+        agreg_seco <- todoenuno %>% 
+                filter(mes %in% seco) %>% # para escoger meses secos y aplicar 
+                                          # tolerancia de __ dias 
+                group_by(mes,ano) %>% 
+                summarise_all(function(x) 
+                    if (sum(is.na(x)) <= tolseco) sum(x, na.rm = TRUE) else NA) %>% 
+                arrange(ano) 
+        
+        agreg_hum <- todoenuno %>% 
+                filter(mes %in% humedo) %>% # para escoger meses humedos y aplicar 
+                                            # tolerancia de __ dias 
+                group_by(mes,ano) %>% 
+                summarise_all(function(x) 
+                    if (sum(is.na(x)) <= tolhum ) sum(x, na.rm = TRUE) else NA) %>% 
+                arrange(ano) 
+        
+        agr_tr <- todoenuno %>% 
+                filter(mes %in% trans) %>% # para escoger meses humedos y aplicar 
+                                           # tolerancia de __ dias 
+                group_by(mes,ano) %>% 
+                summarise_all(function(x) 
+                    if (sum(is.na(x)) <= toltrans ) sum(x, na.rm = TRUE) else NA) %>% 
+                arrange(ano)
+        
+        rbind(agreg_hum, agreg_seco, agr_tr) %>% 
+                arrange(mes) %>% 
+                arrange(ano) %>% 
+                return()
+}
+```
+
+\pagebreak
+
+###  func_tolmeses.R
+
+```{r, eval=F}
+#' @author Eduardo Noriega
+#' @description obtener estaciones y sus datos de estaciones aceptadas de acuerdo a una 
+#' tolerancia de numero de datos minimo por cada mes
+#' @param df es un data frame con los datos agregados a nivel mensual segun el 
+#' siguiente formato:
+#' 
+#' | mes |  ano |  A  |  B  | ... |
+#' |   1 | 1998 | ... | ... | ... |
+#' |   2 | 1998 | ... | ... | ... |
+#' | ... | .... | ... | ... | ... |
+#' | ... | .... | ... | ... | ... |
+#' |  11 | 2016 | ... | ... | ... |
+#' |  12 | 2016 | ... | ... | ... |
+#' 
+#' Donde A, B, etc son las estaciones.
+#' Las fechas del ejemplo son nominales, puede tener cualquier inicio y fin pero el 
+#' paso temporal es diario.
+#' Ej: agr_wide_tol (si hay captor enrique) o agr_tol
+#' "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv"
+#' 
+#' @param tol es un numero que representa la tolerancia que se aplicara
+#' al numero de datos minimo que tendra cada mes.
+#' @param excl es un vector de caracteres que incluye los nombres de las estaciones a las 
+#' que no se desea aplicar la tolerancia del parametro tol.
+#' Ej: c('Chuspipata', 'Huaylipaya')
+#' @param mesesXestacion es un valor logico que si se establece en TRUE se ignora el  
+#' valor de la tolerancia (tol) y el vector de estaciones excluidas (excl) y la funcion 
+#' retornara un df con el numero de datos de cada mes y cada estacion de todas las 
+#' estaciones.
+#' @param coordest valor logico que indica si se escriben las coordenadas de las
+#' estaciones aceptadas en el archivo coord_est_acep_mes.txt.
+#' El archivo que contiene las coordenadas de todas las estaciones es:
+#' "C:/Users/HP/Desktop/EST/coord_todas_est.xlsx"
+#' 
+#' @return si se asigna TRUE a mesesXestacion (objetivo inicial de la 
+#' funcion) se retornara el df con las estaciones y los meses que cumplen la tolerancia 
+#' establecida de numero de datos por mes
+
+tolmeses <- function(df, tol, excl, mesesXestacion = F, coordest = F){
+        require(dplyr)
+        require(openxlsx)
+        library(magrittr)
+        
+        if (mesesXestacion == F) {
+                tmp <- df %>% 
+                        group_by(mes) %>% 
+                        summarise_all(function(x) sum(!is.na(x))) %>% # numero de datos 
+                                                                      # por cada 
+                                                                      # mes dentro de la
+                                                                      # serie (max 19) 
+                        dplyr::select(-1) %>% # elimina columna mes
+                        replace(. < tol,NA) # si mes tiene menos de 10 datos dentro de la 
+                                            # serie temporal se reemplaza el dato existente 
+                                            # por NA
+                
+                if (!missing(excl)) {
+                        tmp_excl <- df %>%
+                                group_by(mes) %>% 
+                                summarise_all(function(x) sum(!is.na(x))) %>% # numero de 
+                                                                              # datos por
+                                                                              # cada mes 
+                                                                              # dentro de 
+                                                                              # la serie 
+                                                                              # (max 19) 
+                                dplyr::select(-1)  %>% # elimina columna mes
+                                dplyr::select(excl) # selecciona las estaciones excluidas 
+                                                    # de la tolerancia de numero de datos 
+                                                    # minimo por mes
+                        tmp[,excl] <- tmp_excl
+                }
+                tmp %<>%
+                        do(data.frame(est = colnames(.[-1]), 
+                                      sum = colSums(!is.na(.[-1])))) %>% 
+                    # se crea df con estaciones y numero de meses con 10 o mas datos. 
+                    # Se elimina fila de ano.
+                        filter(sum > 0) %>% # se filtra el anterior df con estaciones que 
+                                            # tengan por lo menos 1 mes con 10 o mas datos
+                        .$est %>% # se obtiene los nombres de las estaciones aceptadas
+                        as.character() 
+                
+                if (coordest == T) {
+                todas_est_info <- read.xlsx("C:/Users/HP/Desktop/EST/coord_todas_est.xlsx")
+                        
+                        match(tmp, todas_est_info$est) %>% # obtener vector de posicion de  
+                                                           # cada estacion acepada dentro  
+                                                           # del archivo de todas las 
+                                                           # estaciones
+                                todas_est_info[.,] %>% # con el vector anterior se extrae  
+                                                       # las estaciones del archivo de 
+                                                       # todas las estaciones (las  
+                                                       # estaciones estan por fila por 
+                                                       # eso [.,])
+                                do(data.frame(est = .$est, 
+                                              long = .$long.W*-1, 
+                                              lat = .$lat.S*-1)) %>% # se crea un df con 
+                                                                     # el nombre de las 
+                                                                     # estaciones y sus
+                                                                     # coordenadas
+                write.table("H:/@Documentos/Tesis/ProyR_T_CH/data/coord_est_acep_mes.txt",
+                            row.names = F) 
+                }
+                
+                tmp <- df %>% 
+                        dplyr::select(one_of(c('mes', 'ano', tmp))) # se filtra df con la  
+                                                                    # informacion de todas 
+                                                                    # las estaciones 
+                                                                    # obteniendo datos de 
+                                                                    # las estaciones 
+                                                                    # aceptadas
+                        
+        } else {
+                tmp <- df %>% 
+                        group_by(mes) %>% 
+                        summarise_all(function(x) sum(!is.na(x))) %>% # numero de datos 
+                                                                      # por cada mes 
+                                                                      # dentro de la 
+                                                                      # serie (max 19) 
+                        dplyr::select(-2)  # elimina columna ano
+
+        }
+
+        return(tmp)
+}
+```
+\pagebreak
+
+## ordenar_datos.R
+
+```{r, eval=F}
+
+library(openxlsx)
+library(lubridate)
+library(tidyverse)
+
+is.leapyear <- function(year){
+        return(((year %% 4 == 0) & (year %% 100 != 0)) | (year %% 400 == 0))
+    }
+
+RUTA <- "C:/Users/HP/Desktop/EST/desde 1981"
+
+exc_list <- list.files(RUTA, pattern = ".xlsx", full.names = T)
+nom_est <- read.xlsx("C:/Users/HP/Desktop/EST/Rest_2.xlsx", sheet = 2)
+nom_est <- nom_est[,1]
+f <- seq.Date(as.Date("1981-01-01"), as.Date("2016-12-31"), by = "day") #vector de fechas
+
+exc_list <- lapply(exc_list, read.xlsx, startRow = 5, cols = c(1:13), colNames = F)
+
+t <- data.frame(fecha = f)
+for (k in 1:length(nom_est)) { # numero de estaciones 239
+      cc_est <- exc_list[[k]]  
+      cc_est[cc_est == "****"] <- NA # reemplaza todos los ****
+      
+      # datos ordenados:
+      d <- data.frame(NULL) #data frame vacio para llenar datos
+      for (j in 1:36) { # 2016-1981+1 = 36, anos del periodo 1981:2016
+              sub <- cc_est[eval(3 + (j - 1)*38):eval(3 + (j - 1)*38 + 30),2:13]
+              bis <- is.leapyear(eval(1980 + j)) # 1981-1+j, 
+              # para que anos vayan de acuerdo al indice j 
+              for (i in 1:12) {
+                      diasmes <- days_in_month(i)
+                      if (i == 2 & bis == T)  diasmes <- diasmes + 1
+                      msub <- as.numeric(as.character(sub[,i]))
+                      msub <- msub[1:diasmes]
+                      msub <- data.frame(msub) 
+                      d <- rbind(d, msub)
+              }
+      }
+      t <- cbind(t, d)
+}
+names(t) <- c("fecha", nom_est)
+write.csv(t, "H:/@Documentos/Tesis/Proy_R/resultados/todoenuno.csv", row.names = F)
+```
+
+```{r}
+read.csv("H:/@Documentos/Tesis/Proy_R/resultados/todoenuno.csv")[1:4,1:8]
+dim(read.csv("H:/@Documentos/Tesis/Proy_R/resultados/todoenuno.csv"))
+
+```
+
+### agr_wide_tol
+Se aplican las tolerancias para el número de días faltantes en época húmeda y seca y se filtra la informacion en el periodo comun entre TRMM-3B42 y CHIRPS (1198-2016) y se obtiene `agr_tol` pero al existir informacion del captor de Coritza xxx se realiza la comparacion para obtener `agr_wide_tol.csv`. 
+
+``` {r, eval=F}
+source('H:/@Documentos/Tesis/ProyR_T_CH/Rainmerging_edu/scripts/func_dftolerancia.R')
+
+agr_tol <- dftol('C:/Users/HP/Desktop/EST/desde 1981/todo en uno/todoenuno.csv', 
+                sec =  5:8, 
+                hum =  c(1:3,11:12), 
+                tolsec =  5, tolhum =  1, toltr = 0) 
+
+# write.csv(agr_tol, 
+#           "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_tol.csv", 
+#           row.names = F)
+
+#' aqui termina la magia si no existe captor enrique
+
+#' al existir la necesidad de comparar valores con el captor de enrique y luego 
+#' reemplazar los valores diferentes no se escribe agr_tol pero si se escribe 
+#' `agr_wide_tol` que sera creado mas adelante.
+
+#' nombres de estaciones de enrique extraidos de tooenuno.csv
+comparar <- read.csv('C:/Users/HP/Desktop/EST/desde 1981/todo en uno/todoenuno.csv', 
+                    stringsAsFactors = F) %>%
+        mutate(fecha = as.Date(fecha)) %>% 
+        filter(fecha>=as.Date('1998-01-01')) %>% # se filtra la informacion para el 
+                                                 # periodo comun entre TRMM-3B42 y
+                                                 # CHIRPS: 1998-2016
+        dplyr::select(c(1, 20, 87, 26, 27, 33, 41, 65, # seleccion estaciones de captor
+                        68, 86, 88, 93, 95, 111, 127, 
+                        133, 136, 143, 150, 155, 156, 
+                        160, 167, 169, 178, 183, 186, 
+                        207, 226, 229, 231, 232, 233)) %>%
+        mutate(mes = month(fecha), ano = year(fecha)) %>%
+        select(34,35,2:33) %>% 
+        names()
+
+#' captor cc de enrique
+library(openxlsx)
+captorcc <- read.xlsx("H:/@Documentos/Tesis/Hydracces_captor corregido mensual enrique.xlsx",
+                     2, 9, detectDates = T) %>% 
+        mutate(mes = month(Fecha), ano = year(Fecha)) %>% 
+        select(34,35,2:33) %>% 
+        filter(ano <= 2016) %>% 
+        data.table::setnames(comparar) 
+
+#' seleccion de estaciones de enrique de df agregado a partir de datos todoenuno.csv
+agr_tol_cc = agr_tol %>% 
+        dplyr::select(c(1:2, 21, 88, 27, 28, 34, 42, 66, 
+                        69, 87, 89, 94, 96, 112, 128, 
+                        134, 137, 144, 151, 156, 157, 
+                        161, 168, 170, 179, 184, 187, 
+                        208, 227, 230, 232, 233, 234)) 
+#' lista con df que comparan estaciones:
+#' captorcc : valores de captorcc
+#' agr_tol : valores de agregago con tolerancias
+#' dif : diferencia entre captor cc y agregado con tolerancias
+#' los df solo tienen observaciones (filas) con una diferencia
+#' mayor a +-0.5
+dif_list = list()
+for (i in 3:34) { # 32 estaciones del captor para comparar
+        data.frame(mes = agr_tol_cc$mes, ano = agr_tol_cc$ano, 
+                   captorcc = captorcc[i], agr_tol=agr_tol_cc[i]) %>%
+                data.table::setnames(c(names(captorcc)[i], 'ano', 
+                                       'captorcc', 'agr_tol')) %>% 
+                mutate(dif = round(captorcc - agr_tol,3)) %>% 
+                filter(abs(dif) >= 0.5) -> tmp
+        dif_list[[i - 2]] = tmp
+}        
+
+#' cambio de formato de agr_tol (agregados con toleancia de todoenuno)
+#' de wide a long
+#' (se crea columna con nombre de estacion apra cada dato)
+agr_melt = reshape2::melt(as.data.frame(agr_tol), id.vars = c('mes', 'ano'))
+
+#' reemplazo de valores de agregado con tolerancia con valores
+#' de captor cc de enrique
+for (j in 1:length(dif_list)) {
+        tmp <- dif_list[[j]] 
+        if(nrow(tmp)!= 0) { 
+                for (i in 1:nrow(tmp)) {
+                        m = tmp[i,1] ; 
+                        y = tmp[i,2] ; 
+                        estacion = names(tmp)[1] ; 
+                        val = tmp[i,3]
+                        
+                        agr_melt[,4][agr_melt$mes == m & 
+                                         agr_melt$ano == y & 
+                                             agr_melt$variable == estacion] <- val
+                }
+                
+        }
+        
+}
+
+#' retorno a formato wide despues de reemplazo de valores
+agr_wide_tol = reshape(agr_melt, 
+                       idvar = c('mes', 'ano'), 
+                       timevar = 'variable', 
+                       direction = 'wide' ) %>% 
+        data.table::setnames(names(agr_tol))
+
+write.csv(agr_wide_tol, 
+          "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv", 
+          row.names = F)
+```
+`agr_wide_tol.R` tiene la siguiente estructura:
+```{r}
+read.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv")[1:4,1:8]
+
+```
+con dimensiones:
+```{r}
+dim(read.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/agr_wide_tol.csv"))
+
+```
+que corresponden a 228 meses y 239 estaciones.
+
+Se aplica la tolerancia de 10 datos como minimo para cada mes dentro de la serie excluyendo del analisis a Chuspipata y Huaylipaya para asegurarse su uso en el analisis final.
+```{r, eval=F}
+source('H:/@Documentos/Tesis/ProyR_T_CH/Rainmerging_edu/scripts/func_tolmeses.R')
+tolmeses(agr_wide_tol, 10, c('Chuspipata', 'Huaylipaya'), coordest = T) %>%
+    write.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/est_mes.csv",
+              row.names=F)
+```
+
+Para reemplazar informacion del totalizador de Chuspipata:
+```{r, eval=F}
+#' reemplazar valores de toatalizadores en est_mes.csv
+
+est_mes <- read.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/est_mes.csv")
+reempl <- read.table("C:/Users/HP/Desktop/EST/desde 1981/chuspipata_totalizadores.txt",
+                    header = T)
+
+est_mes[,names(reempl[2])] = reempl[2]
+
+write.csv(est_mes, "H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/est_mes.csv", 
+          row.names = F)
+
+```
+Finalmente se obtiene:
+```{r}
+read.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/est_mes.csv")[1:4,1:6]
+```
+El archivo `est_mes.csv` tiene dimensiones:
+```{r}
+dim(read.csv("H:/@Documentos/Tesis/ProyR_T_CH/data/lluvias_2017/resumidos/est_mes.csv"))
+
+```
+que corresponden a 228 meses y 107 estaciones.
